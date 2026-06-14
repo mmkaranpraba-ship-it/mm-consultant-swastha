@@ -49,6 +49,9 @@
             background: #0f2b5e;
             border-radius: 20px;
             padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
         .machine-title {
             font-size: 24px;
@@ -83,6 +86,20 @@
         .metric span {
             font-weight: bold;
             color: #FFD700;
+        }
+        .reset-btn {
+            background: #e67e22;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 15px;
+            width: 100%;
+            font-weight: bold;
+        }
+        .reset-btn:active {
+            transform: scale(0.98);
         }
         .footer {
             margin-top: 30px;
@@ -125,11 +142,12 @@
 </div>
 
 <div class="machines-grid" id="machinesGrid"></div>
-<div class="footer">Data refreshes every 30 seconds. MTTR = average repair time (closed issues). MTBF = average time between failures (closed issues only).</div>
+<div class="footer">Data refreshes every 30 seconds. MTTR = average repair time (closed issues). MTBF = average time between failures (closed issues only). Click "Reset" to close an open issue.</div>
 
 <script>
     const shiftMinutes = 8 * 60;
     let allEvents = [];
+    const machinesList = ["CNC Machine", "Lathe Machine", "Grinder"];
 
     function parseCustomDate(dateStr) {
         if (!dateStr) return null;
@@ -154,6 +172,23 @@
         } catch (err) {
             console.error("Failed to load events:", err);
             document.getElementById('machinesGrid').innerHTML = '<div style="text-align:center;">Error loading data. Make sure backend is updated.</div>';
+        }
+    }
+
+    async function resetMachine(machineName) {
+        try {
+            const response = await fetch('/reset_machine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ machine: machineName })
+            });
+            if (response.ok) {
+                await loadData(); // reload data after reset
+            } else {
+                console.error("Reset failed");
+            }
+        } catch (err) {
+            console.error("Reset error:", err);
         }
     }
 
@@ -185,11 +220,10 @@
         document.getElementById('oeeValue').innerText = oee.toFixed(1) + '%';
         document.getElementById('totalDowntime').innerText = Math.round(totalDowntimeMinutes) + ' min';
 
-        const machines = ["CNC Machine", "Lathe Machine", "Grinder"];
         const grid = document.getElementById('machinesGrid');
         let html = '';
 
-        for (let mach of machines) {
+        for (let mach of machinesList) {
             const events = machineMap.get(mach) || [];
             const openIssues = events.filter(e => e.isOpen);
             const closedIssues = events.filter(e => !e.isOpen && e.end);
@@ -226,6 +260,7 @@
                     </div>
                     <div class="metric"><span>MTTR:</span> ${mttr > 0 ? mttr.toFixed(1) + ' min' : 'N/A'}</div>
                     <div class="metric"><span>MTBF:</span> ${mtbf > 0 ? mtbf.toFixed(1) + ' min' : 'N/A'}</div>
+                    <button class="reset-btn" onclick="resetMachine('${mach}')">🔧 Reset ${mach}</button>
                 </div>
             `;
         }
