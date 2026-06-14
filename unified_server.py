@@ -1,10 +1,11 @@
-from flask import Flask, send_file, request, jsonify
+from flask import Flask, send_file, request, jsonify, Response
 import re
 from datetime import datetime, timezone, timedelta
+import csv
+from io import StringIO
 
 app = Flask(__name__)
 
-# In-memory storage: each event has start_time, end_time (None if still down)
 downtime_events = []
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -12,14 +13,20 @@ IST = timezone(timedelta(hours=5, minutes=30))
 def get_ist_timestamp():
     return datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p")
 
-# Machine name mapping
 NAME_MAP = {
+    # Exact names
     "cnc machine": "CNC Machine",
     "cnc": "CNC Machine",
     "lathe machine": "Lathe Machine",
     "lathe": "Lathe Machine",
     "grinder machine": "Grinder",
     "grinder": "Grinder",
+    # Common misspellings / typos
+    "grider": "Grinder",
+    "grider machine": "Grinder",
+    "gridder": "Grinder",
+    "grindr": "Grinder",
+    # Number aliases
     "machine 1": "CNC Machine",
     "machine 2": "Lathe Machine",
     "machine 3": "Grinder",
@@ -79,7 +86,7 @@ def whatsapp_webhook():
         })
         return f"✅ {extracted['machine']} downtime logged at {now}. Cause: {extracted['cause']}"
     else:
-        return "❌ Please say machine name or number, e.g., 'CNC machine stopped, power failure'"
+        return f"❌ Could not recognise machine in '{incoming_msg}'. Please say machine name (CNC, Lathe, Grinder) or number (1,2,3)."
 
 @app.route('/get_events')
 def get_events():
@@ -122,9 +129,33 @@ def reset_machine():
             break
     return jsonify({"status": f"Reset {machine_name}"})
 
-@app.route('/reliability')
-def reliability():
-    return send_file('reliability.html')
+@app.route('/export_reliability')
+def export_reliability():
+    si = StringIO()
+    si.write('\uFEFF')  # UTF-8 BOM for Excel
+    cw = csv.writer(si)
+    cw.writerow(["Start Time", "End Time", "Duration (minutes)", "Machine", "Cause", "Status"])
+    
+    for event in downtime_events:
+        start_str = event['start_time']
+        end_str = event['end_time'] if event['end_time'] else "Still open"
+        status = "Closed" if event['end_time'] else "Open"
+        # Calculate duration
+        try:
+            start_dt = datetime.strptime(start_str, "%Y-%m-%d %I:%M:%S %p")
+            if event['end_time']:
+                end_dt = datetime.strptime(event['end_time'], "%Y-%m-%d %I:%M:%S %p")
+                duration_min = int((end_dt - start_dt).total_seconds() / 60)
+            else:
+                duration_min = "N/A"
+        except:
+            duration_min = "N/A"
+        
+        cw.writerow([start_str, end_str, duration_min, event['machine'], event['cause'], status])
+    
+    output = si.getvalue()
+    return Response(output, mimetype='text/csv', 
+                    headers={"Content-Disposition": "attachment;filename=reliability_report.csv"})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)

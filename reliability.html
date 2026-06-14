@@ -107,17 +107,26 @@
             font-size: 12px;
             color: #aaa;
         }
-        .refresh-btn {
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .action-btn {
             background: #e67e22;
             border: none;
             color: white;
             padding: 8px 16px;
             border-radius: 30px;
             cursor: pointer;
-            margin-bottom: 20px;
-            display: block;
-            margin-left: auto;
-            margin-right: auto;
+            font-weight: bold;
+        }
+        .export-btn {
+            background-color: #00b894;
+        }
+        .action-btn:active {
+            transform: scale(0.98);
         }
     </style>
 </head>
@@ -127,7 +136,11 @@
     <div style="font-size: 20px; font-weight: 500; color: #a0d6ff; margin-top: 5px;">Swastha</div>
 </div>
 <h1>📊 RELIABILITY DASHBOARD (OEE, MTTR, MTBF)</h1>
-<button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+
+<div class="action-buttons">
+    <button class="action-btn" onclick="loadData()">🔄 Refresh Data</button>
+    <button class="action-btn export-btn" onclick="exportToExcel()">📊 Export to Excel</button>
+</div>
 
 <div class="overall-stats" id="overallStats">
     <div class="stat-card">
@@ -183,12 +196,31 @@
                 body: JSON.stringify({ machine: machineName })
             });
             if (response.ok) {
-                await loadData(); // reload data after reset
+                await loadData();
             } else {
                 console.error("Reset failed");
             }
         } catch (err) {
             console.error("Reset error:", err);
+        }
+    }
+
+    async function exportToExcel() {
+        try {
+            const response = await fetch('/export_reliability');
+            if (!response.ok) throw new Error('Export failed');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'reliability_report.csv';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error("Export error:", err);
+            alert("Failed to export. Please try again.");
         }
     }
 
