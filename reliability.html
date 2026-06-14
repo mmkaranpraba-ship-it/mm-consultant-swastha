@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reliability Dashboard</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #1E3A8A;
+            color: white;
+            padding: 20px;
+        }
+        .branding {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        .overall-stats {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: #0f2b5e;
+            padding: 20px;
+            border-radius: 20px;
+            text-align: center;
+            min-width: 180px;
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+        .machines-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .machine-card {
+            background: #0f2b5e;
+            border-radius: 20px;
+            padding: 15px;
+        }
+        .machine-title {
+            font-size: 24px;
+            font-weight: bold;
+            border-bottom: 2px solid #FFD700;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+        }
+        .issues {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0;
+        }
+        .open-issue {
+            background: #d63031;
+            padding: 5px 10px;
+            border-radius: 20px;
+            text-align: center;
+            flex: 1;
+        }
+        .closed-issue {
+            background: #00b894;
+            padding: 5px 10px;
+            border-radius: 20px;
+            text-align: center;
+            flex: 1;
+        }
+        .metric {
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        .metric span {
+            font-weight: bold;
+            color: #FFD700;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #aaa;
+        }
+        .refresh-btn {
+            background: #e67e22;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+<div class="branding">
+    <div style="font-size: 32px; font-weight: 900; color: #FFD700; letter-spacing: 2px;">M.M.Consultant</div>
+    <div style="font-size: 20px; font-weight: 500; color: #a0d6ff; margin-top: 5px;">Swastha</div>
+</div>
+<h1>📊 RELIABILITY DASHBOARD (OEE, MTTR, MTBF)</h1>
+<button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+
+<div class="overall-stats" id="overallStats">
+    <div class="stat-card">
+        <div>OEE (Availability)</div>
+        <div class="stat-value" id="oeeValue">--%</div>
+        <div style="font-size:12px;">(Shift: 8h)</div>
+    </div>
+    <div class="stat-card">
+        <div>Total Downtime (Today)</div>
+        <div class="stat-value" id="totalDowntime">-- min</div>
+    </div>
+</div>
+
+<div class="machines-grid" id="machinesGrid"></div>
+<div class="footer">Data refreshes every 30 seconds. MTTR = average repair time (closed issues). MTBF = average time between failures (closed issues only).</div>
+
+<script>
+    const shiftMinutes = 8 * 60;
+    let allEvents = [];
+
+    function parseCustomDate(dateStr) {
+        if (!dateStr) return null;
+        let d = new Date(dateStr);
+        if (!isNaN(d)) return d;
+        let parts = dateStr.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(AM|PM)/);
+        if (!parts) return null;
+        let [_, date, time, ampm] = parts;
+        let [hours, minutes, seconds] = time.split(':').map(Number);
+        if (ampm === 'PM' && hours !== 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        let iso = `${date}T${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+        return new Date(iso);
+    }
+
+    async function loadData() {
+        try {
+            const response = await fetch('/all_events');
+            const data = await response.json();
+            allEvents = data.events || [];
+            updateDashboard();
+        } catch (err) {
+            console.error("Failed to load events:", err);
+            document.getElementById('machinesGrid').innerHTML = '<div style="text-align:center;">Error loading data. Make sure backend is updated.</div>';
+        }
+    }
+
+    function updateDashboard() {
+        const today = new Date().toDateString();
+        let totalDowntimeMinutes = 0;
+        const machineMap = new Map();
+
+        allEvents.forEach(ev => {
+            const machine = ev.machine;
+            if (!machineMap.has(machine)) machineMap.set(machine, []);
+            const startDate = parseCustomDate(ev.start_time);
+            if (!startDate) return;
+            const endDate = ev.end_time ? parseCustomDate(ev.end_time) : null;
+            machineMap.get(machine).push({
+                start: startDate,
+                end: endDate,
+                cause: ev.cause,
+                isOpen: !endDate
+            });
+            if (startDate.toDateString() === today) {
+                let downtimeEnd = endDate ? endDate : new Date();
+                let durationMinutes = (downtimeEnd - startDate) / 60000;
+                if (durationMinutes > 0) totalDowntimeMinutes += durationMinutes;
+            }
+        });
+
+        let oee = Math.max(0, (shiftMinutes - totalDowntimeMinutes) / shiftMinutes * 100);
+        document.getElementById('oeeValue').innerText = oee.toFixed(1) + '%';
+        document.getElementById('totalDowntime').innerText = Math.round(totalDowntimeMinutes) + ' min';
+
+        const machines = ["CNC Machine", "Lathe Machine", "Grinder"];
+        const grid = document.getElementById('machinesGrid');
+        let html = '';
+
+        for (let mach of machines) {
+            const events = machineMap.get(mach) || [];
+            const openIssues = events.filter(e => e.isOpen);
+            const closedIssues = events.filter(e => !e.isOpen && e.end);
+            const openCount = openIssues.length;
+            const closedCount = closedIssues.length;
+
+            let mttr = 0;
+            if (closedIssues.length > 0) {
+                let totalRepairMinutes = 0;
+                for (let e of closedIssues) {
+                    let duration = (e.end - e.start) / 60000;
+                    if (duration > 0) totalRepairMinutes += duration;
+                }
+                mttr = totalRepairMinutes / closedIssues.length;
+            }
+
+            let mtbf = 0;
+            if (closedIssues.length >= 2) {
+                const sorted = [...closedIssues].sort((a,b) => a.start - b.start);
+                let totalGapMinutes = 0;
+                for (let i = 1; i < sorted.length; i++) {
+                    let gap = (sorted[i].start - sorted[i-1].start) / 60000;
+                    if (gap > 0) totalGapMinutes += gap;
+                }
+                mtbf = totalGapMinutes / (sorted.length - 1);
+            }
+
+            html += `
+                <div class="machine-card">
+                    <div class="machine-title">${mach}</div>
+                    <div class="issues">
+                        <div class="open-issue">🔴 Open: ${openCount}</div>
+                        <div class="closed-issue">🟢 Closed: ${closedCount}</div>
+                    </div>
+                    <div class="metric"><span>MTTR:</span> ${mttr > 0 ? mttr.toFixed(1) + ' min' : 'N/A'}</div>
+                    <div class="metric"><span>MTBF:</span> ${mtbf > 0 ? mtbf.toFixed(1) + ' min' : 'N/A'}</div>
+                </div>
+            `;
+        }
+        grid.innerHTML = html;
+    }
+
+    loadData();
+    setInterval(loadData, 30000);
+</script>
+</body>
+</html>

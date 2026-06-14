@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shopfloor Reporter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #1E3A8A;
+            color: white;
+            padding: 20px;
+        }
+        .container { max-width: 700px; margin: 0 auto; }
+        .branding {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 32px;
+            margin-bottom: 5px;
+            color: #fff;
+        }
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border-radius: 12px;
+            border: none;
+            font-size: 18px;
+            font-family: monospace;
+            margin: 20px 0;
+            background: #0f2b5e;
+            color: white;
+            border: 1px solid #00b894;
+        }
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin: 10px 0;
+        }
+        button {
+            flex: 1;
+            cursor: pointer;
+            position: relative;
+            z-index: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            transition: 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .speak-btn {
+            background: #e67e22;
+            color: white;
+        }
+        .clear-btn {
+            background: #d63031;
+            color: white;
+        }
+        .submit-btn {
+            background: #00b894;
+            color: white;
+        }
+        .status {
+            background: rgba(0,0,0,0.6);
+            padding: 12px;
+            border-radius: 30px;
+            margin: 15px 0;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #f1c40f;
+        }
+        .examples {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .example {
+            background: #2c3e50;
+            padding: 10px 18px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            color: #ecf0f1;
+        }
+        .example:active { background: #e67e22; }
+        .footer-note {
+            text-align: center;
+            font-size: 14px;
+            color: #ddd;
+            margin-top: 25px;
+        }
+    </style>
+</head>
+<body>
+<div class="branding">
+    <div style="font-size: 32px; font-weight: 900; color: #FFD700; letter-spacing: 2px;">M.M.Consultant</div>
+    <div style="font-size: 20px; font-weight: 500; color: #a0d6ff; margin-top: 5px;">Swastha</div>
+</div>
+<div class="container">
+    <h1>🎙️ REPORT MACHINE ISSUE</h1>
+    <textarea id="reportText" rows="3" placeholder="Type or speak your report here...&#10;Example: CNC machine stopped, power failure"></textarea>
+    
+    <div class="button-group">
+        <button id="speakBtn" class="speak-btn">🎤 SPEAK</button>
+        <button id="clearBtn" class="clear-btn">🗑️ CLEAR</button>
+        <button id="submitBtn" class="submit-btn">✅ SUBMIT</button>
+    </div>
+    
+    <div class="status" id="statusMsg">📢 Ready – type, use examples, or tap SPEAK.</div>
+    
+    <div class="examples">
+        <span class="example" onclick="setExample('CNC machine stopped, power failure')">⚙️ CNC: power failure</span>
+        <span class="example" onclick="setExample('Lathe machine motor problem')">🔩 Lathe: motor problem</span>
+        <span class="example" onclick="setExample('Grinder bearing failed')">🛠️ Grinder: bearing failed</span>
+    </div>
+    <div class="footer-note">💡 Tap SPEAK, allow microphone, then speak clearly. Max 30 seconds – tap again to stop. If voice doesn't work, type manually.</div>
+</div>
+
+<script>
+    const reportText = document.getElementById('reportText');
+    const submitBtn = document.getElementById('submitBtn');
+    const speakBtn = document.getElementById('speakBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusMsg = document.getElementById('statusMsg');
+    
+    let recognition = null;
+    let listening = false;
+    let timeoutId = null;
+    
+    function stopRecognition() {
+        if (recognition) {
+            try { recognition.abort(); } catch(e) {}
+            recognition = null;
+        }
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+        listening = false;
+        speakBtn.disabled = false;
+        speakBtn.innerText = '🎤 SPEAK';
+    }
+    
+    async function startRecognition() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+        } catch(err) {
+            statusMsg.innerHTML = '❌ Microphone access denied. Please allow microphone.';
+            return;
+        }
+        
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            statusMsg.innerHTML = '❌ Speech not supported. Please type.';
+            return;
+        }
+        
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+        
+        recognition.onstart = () => {
+            listening = true;
+            statusMsg.innerHTML = '🎙️ Listening... (max 30 sec)';
+            speakBtn.disabled = true;
+            speakBtn.innerText = '🎤 LISTENING...';
+            timeoutId = setTimeout(() => {
+                if (listening) stopRecognition();
+            }, 30000);
+        };
+        
+        recognition.onend = () => {
+            if (listening) {
+                stopRecognition();
+                if (!reportText.value.trim()) {
+                    statusMsg.innerHTML = '📢 No speech detected. Tap SPEAK again or type.';
+                } else {
+                    statusMsg.innerHTML = '✅ Text ready. Edit then SUBMIT.';
+                }
+            }
+        };
+        
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            reportText.value = transcript;
+            statusMsg.innerHTML = '✅ Text filled. You can edit above, then SUBMIT.';
+            stopRecognition();
+        };
+        
+        recognition.onerror = (event) => {
+            if (event.error === 'network') {
+                statusMsg.innerHTML = '⚠️ Speech network issue. Please type your report (or refresh and try again).';
+            } else if (event.error === 'not-allowed') {
+                statusMsg.innerHTML = '❌ Microphone blocked. Please allow microphone in browser settings.';
+            } else {
+                statusMsg.innerHTML = '❌ Error: ' + event.error + '. Please type.';
+            }
+            stopRecognition();
+        };
+        
+        recognition.start();
+    }
+    
+    speakBtn.addEventListener('click', () => {
+        if (listening) {
+            stopRecognition();
+            statusMsg.innerHTML = '📢 Stopped. You can type or tap SPEAK again.';
+        } else {
+            startRecognition();
+        }
+    });
+    
+    function setExample(text) {
+        reportText.value = text;
+        statusMsg.innerHTML = '📋 Example loaded. Edit then SUBMIT.';
+    }
+    
+    clearBtn.addEventListener('click', () => {
+        reportText.value = '';
+        statusMsg.innerHTML = '📢 Cleared. Type or tap SPEAK.';
+    });
+    
+    submitBtn.addEventListener('click', async () => {
+        const message = reportText.value.trim();
+        if (!message) {
+            statusMsg.innerHTML = '❌ Please enter a report.';
+            return;
+        }
+        
+        submitBtn.disabled = true;
+        const originalText = submitBtn.innerText;
+        submitBtn.innerText = '⏳ SENDING...';
+        statusMsg.innerHTML = '📤 Sending report to server...';
+        
+        try {
+            const response = await fetch('/whatsapp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'Body=' + encodeURIComponent(message)
+            });
+            const responseText = await response.text();
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${responseText}`);
+            }
+            
+            statusMsg.innerHTML = '✅ ' + responseText;
+            reportText.value = '';
+            
+            setTimeout(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerText = originalText;
+                statusMsg.innerHTML = '📢 Ready for next report.';
+            }, 2000);
+            
+        } catch (err) {
+            statusMsg.innerHTML = `❌ FAILED: ${err.message}. Please try again.`;
+            submitBtn.disabled = false;
+            submitBtn.innerText = originalText;
+        }
+    });
+</script>
+</body>
+</html>
